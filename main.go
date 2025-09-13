@@ -20,9 +20,10 @@ func main() {
 	fmt.Printf("Reading data from %s\n", inputFilePath)
 	fmt.Println("=====================================")
 	//
+	currentLine := []byte{}
 	for {
 		b := make([]byte, 8)
-		n, err := f.Read(b)
+		_, err := f.Read(b)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
@@ -30,7 +31,16 @@ func main() {
 			fmt.Printf("error: %s\n", err.Error())
 			break
 		}
-		str := string(b[:n])
-		fmt.Printf("read: %s\n", str)
+		//
+		separator := "\n"
+		for _, val := range b {
+			if string(val) == separator {
+				fmt.Printf("read: %s\n", currentLine)
+				currentLine = []byte{}
+			} else {
+				currentLine = append(currentLine, val)
+			}
+		}
 	}
+	fmt.Printf("read: %s\n", currentLine)
 }

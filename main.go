@@ -1,32 +1,36 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 )
 
+const inputFilePath = "messages.txt"
+
 func main() {
-	f, err := os.OpenFile("messages.txt", os.O_RDWR|os.O_CREATE, 0644)
+	f, err := os.Open(inputFilePath)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("could not open %s: %s\n", inputFilePath, err)
 	}
+	defer f.Close()
+
+	fmt.Printf("Reading data from %s\n", inputFilePath)
+	fmt.Println("=====================================")
 	//
-	eightByteSlice := make([]byte, 8)
 	for {
-		n, err := f.Read(eightByteSlice)
+		b := make([]byte, 8)
+		n, err := f.Read(b)
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
-			log.Fatal(err)
+			fmt.Printf("error: %s\n", err.Error())
+			break
 		}
-		fmt.Printf("read: %s\n", string(eightByteSlice[:n]))
-		// eightByteSlice = eightByteSlice[:0]
-		// n, err = f.ReadAt(eightByteSlice, int64(n))
-		// if err != nil {
-		// 	log.Fatal(err)
-		// }
+		str := string(b[:n])
+		fmt.Printf("read: %s\n", str)
 	}
 }

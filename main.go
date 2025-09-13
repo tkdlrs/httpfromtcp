@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 )
 
 const inputFilePath = "messages.txt"
@@ -20,11 +21,15 @@ func main() {
 	fmt.Printf("Reading data from %s\n", inputFilePath)
 	fmt.Println("=====================================")
 	//
-	currentLine := []byte{}
+	currentLine := ""
 	for {
-		b := make([]byte, 8)
-		_, err := f.Read(b)
+		buffer := make([]byte, 8)
+		n, err := f.Read(buffer)
 		if err != nil {
+			if currentLine != "" {
+				fmt.Printf("read: %s\n", currentLine)
+				currentLine = ""
+			}
 			if errors.Is(err, io.EOF) {
 				break
 			}
@@ -32,15 +37,12 @@ func main() {
 			break
 		}
 		//
-		separator := "\n"
-		for _, val := range b {
-			if string(val) == separator {
-				fmt.Printf("read: %s\n", currentLine)
-				currentLine = []byte{}
-			} else {
-				currentLine = append(currentLine, val)
-			}
+		str := string(buffer[:n])
+		parts := strings.Split(str, "\n")
+		for i := 0; i < len(parts)-1; i++ {
+			fmt.Printf("read: %s%s\n", currentLine, parts[i])
+			currentLine = ""
 		}
+		currentLine += parts[len(parts)-1]
 	}
-	fmt.Printf("read: %s\n", currentLine)
 }

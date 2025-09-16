@@ -9,30 +9,31 @@ import (
 	"strings"
 )
 
+const port = ":42069"
+
 func main() {
-	ln, err := net.Listen("tcp", ":42069")
+	listener, err := net.Listen("tcp", port)
 	if err != nil {
-		log.Fatalf("could not listen to connection %s \n", err)
+		log.Fatalf("error listening for TCP traffic: %s\n", err.Error())
 	}
-	defer ln.Close()
+	defer listener.Close()
 	//
+	fmt.Println("Listening for TCP traffic on", port)
 	for {
-		conn, err := ln.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
-			fmt.Printf("could not accept connection %s \n", err)
+			log.Fatalf("error: %s\n", err.Error())
 			continue
 		}
-		fmt.Println("accepted connection")
+		fmt.Println("Accepted connection from", conn.RemoteAddr())
 		//
 		linesChan := getLinesChannel(conn)
 		//
 		for line := range linesChan {
-			line = strings.TrimSuffix(line, "\r")
 			fmt.Println(line)
 		}
-		fmt.Println("connection closed")
+		fmt.Println("Connection to ", conn.RemoteAddr(), "closed")
 	}
-	//
 }
 
 func getLinesChannel(f io.ReadCloser) <-chan string {
@@ -57,7 +58,7 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 			//
 			str := string(buffer[:n])
 			parts := strings.Split(str, "\n")
-
+			//
 			for i := 0; i < len(parts)-1; i++ {
 				lines <- fmt.Sprintf("%s%s", currentLineContents, parts[i])
 				currentLineContents = ""

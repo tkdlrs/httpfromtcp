@@ -2,6 +2,7 @@ package request
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -9,7 +10,15 @@ import (
 
 type Request struct {
 	RequestLine RequestLine
+	pState      parserState
 }
+
+type parserState int
+
+const (
+	initialized parserState = iota
+	done
+)
 
 type RequestLine struct {
 	HttpVersion   string
@@ -20,30 +29,48 @@ type RequestLine struct {
 const crlf = "\r\n"
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	rawBytes, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, err
+	theRequest := Request{}
+	theRequest.pState = initialized
+	bufferSize := 8
+	buf := make([]byte, bufferSize)
+	readBytes := 0
+	parsedBytes := 0
+	for theRequest.pState != done {
+		// Handle out of buffer space
+		if len(buf) == bufferSize {
+			bufferSize *= 2
+			bufCopy := buf
+			buf = make([]byte, bufferSize)
+			copy(buf, bufCopy)
+		}
+		//
+		n, err := reader.Read(buf[readBytes:])
+		readBytes += n
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				theRequest.pState = done
+				break
+			}
+			return nil, fmt.Errorf("error reading theRequest: %v", err)
+		}
+		//
+		nb, err := theRequest.parse(buf[:readBytes])
+		if err != nil {
+			return nil, fmt.Errorf("error parsing theRequest: %v", err)
+		}
+		parsedBytes += nb
 	}
-	requestLine, err := parseRequestLine(rawBytes)
-	if err != nil {
-		return nil, err
-	}
-	return &Request{
-		RequestLine: *requestLine,
-	}, nil
+	//
+	return &theRequest, nil
 }
 
-func parseRequestLine(data []byte) (*RequestLine, error) {
+func parseRequestLine(data []byte) (int, error) {
 	idx := bytes.Index(data, []byte(crlf))
 	if idx == -1 {
-		return nil, fmt.Errorf("could not find CRLF in request-line")
+		return 0, nil
 	}
-	requestLineText := string(data[:idx])
-	requestLine, err := requestLineFromString(requestLineText)
-	if err != nil {
-		return nil, err
-	}
-	return requestLine, nil
+	//
+	return idx + len(crlf), nil
 }
 
 func requestLineFromString(str string) (*RequestLine, error) {
@@ -82,4 +109,38 @@ func requestLineFromString(str string) (*RequestLine, error) {
 		RequestTarget: requestTarget,
 		Method:        method,
 	}, nil
+}
+
+func (r *Request) parse(data []byte) (int, error) {
+	// Accepts the next slice of bytes that needs to be parsed into the Request struct. But where? the Request struct doesn't have raw data so how
+	if r.pState == initialized {
+		consumededBytes, err := parseRequestLine(data)
+		// Handle errors from parseRequestLine
+		if err != nil {
+			return 0, err
+		}
+		// parseRequestLine needs more data
+		if consumededBytes == 0 {
+			return 0, nil
+		}
+		// to get here consumedBytes is > 0, meaning we have a full request line.
+		// Extract that part of the data. -don't include the crlf in the text
+		requestLineText := string(data[:consumededBytes-len(crlf)])
+
+		// call requestLineFromString to get the actual RequestLine struct
+		requestLineStruct, err := requestLineFromString(requestLineText)
+		if err != nil {
+			return 0, err
+		}
+		// store the requestLineStruct in r.RequestLine
+		r.RequestLine = *requestLineStruct
+		// update r.pState
+		r.pState = done
+		// return num successfully consumed and parsed bytes
+		return consumededBytes, nil
+	} else if r.pState == done {
+		return -1, fmt.Errorf("error: trying to read data in a done state %v", r.pState)
+	} else {
+		return -1, fmt.Errorf("error: unknown state %v", r.pState)
+	}
 }

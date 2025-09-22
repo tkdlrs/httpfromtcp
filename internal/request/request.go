@@ -59,6 +59,8 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			return nil, fmt.Errorf("error parsing theRequest: %v", err)
 		}
 		parsedBytes += nb
+		copy(buf[0:], buf[nb:readBytes])
+		readBytes -= nb
 	}
 	//
 	return &theRequest, nil

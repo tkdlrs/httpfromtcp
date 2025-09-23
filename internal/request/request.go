@@ -10,69 +10,72 @@ import (
 
 type Request struct {
 	RequestLine RequestLine
-	pState      parserState
+	state       requestState
 }
-
-type parserState int
-
-const (
-	initialized parserState = iota
-	done
-)
 
 type RequestLine struct {
 	HttpVersion   string
 	RequestTarget string
 	Method        string
 }
+type requestState int
 
+const (
+	requestStateInitialized requestState = iota
+	requestStateDone
+)
 const crlf = "\r\n"
+const bufferSize = 8
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	theRequest := Request{}
-	theRequest.pState = initialized
-	bufferSize := 8
 	buf := make([]byte, bufferSize)
-	readBytes := 0
-	parsedBytes := 0
-	for theRequest.pState != done {
+	readToIndex := 0
+	req := &Request{
+		state: requestStateInitialized,
+	}
+	//
+	for req.state != requestStateDone {
 		// Handle out of buffer space
-		if len(buf) == bufferSize {
-			bufferSize *= 2
-			bufCopy := buf
-			buf = make([]byte, bufferSize)
-			copy(buf, bufCopy)
+		if readToIndex >= len(buf) {
+			newBuf := make([]byte, len(buf)*2)
+			copy(newBuf, buf)
+			buf = newBuf
 		}
 		//
-		n, err := reader.Read(buf[readBytes:])
-		readBytes += n
+		numBytesRead, err := reader.Read(buf[readToIndex:])
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				theRequest.pState = done
+				req.state = requestStateDone
 				break
 			}
-			return nil, fmt.Errorf("error reading theRequest: %v", err)
+			return nil, err
+		}
+		readToIndex += numBytesRead
+		//
+		numBytesParsed, err := req.parse(buf[:readToIndex])
+		if err != nil {
+			return nil, err
 		}
 		//
-		nb, err := theRequest.parse(buf[:readBytes])
-		if err != nil {
-			return nil, fmt.Errorf("error parsing theRequest: %v", err)
-		}
-		parsedBytes += nb
-		copy(buf[0:], buf[nb:readBytes])
-		readBytes -= nb
+		copy(buf, buf[numBytesParsed:])
+		readToIndex -= numBytesParsed
 	}
 	//
-	return &theRequest, nil
+	return req, nil
 }
 
-func parseRequestLine(data []byte) (int, error) {
+func parseRequestLine(data []byte) (*RequestLine, int, error) {
 	idx := bytes.Index(data, []byte(crlf))
 	if idx == -1 {
-		return 0, nil
+		return nil, 0, nil
+	}
+	requestLineText := string(data[:idx])
+	requestLine, err := requestLineFromString(requestLineText)
+	if err != nil {
+		return nil, 0, nil
 	}
 	//
-	return idx + len(crlf), nil
+	return requestLine, idx + 2, nil
 }
 
 func requestLineFromString(str string) (*RequestLine, error) {
@@ -107,42 +110,34 @@ func requestLineFromString(str string) (*RequestLine, error) {
 	}
 	//
 	return &RequestLine{
-		HttpVersion:   versionParts[1],
-		RequestTarget: requestTarget,
 		Method:        method,
+		RequestTarget: requestTarget,
+		HttpVersion:   versionParts[1],
 	}, nil
 }
 
 func (r *Request) parse(data []byte) (int, error) {
 	// Accepts the next slice of bytes that needs to be parsed into the Request struct. But where? the Request struct doesn't have raw data so how
-	if r.pState == initialized {
-		consumededBytes, err := parseRequestLine(data)
+	switch r.state {
+	case requestStateInitialized:
+		requestLine, n, err := parseRequestLine(data)
 		// Handle errors from parseRequestLine
 		if err != nil {
 			return 0, err
 		}
 		// parseRequestLine needs more data
-		if consumededBytes == 0 {
+		if n == 0 {
 			return 0, nil
 		}
-		// to get here consumedBytes is > 0, meaning we have a full request line.
-		// Extract that part of the data. -don't include the crlf in the text
-		requestLineText := string(data[:consumededBytes-len(crlf)])
-
-		// call requestLineFromString to get the actual RequestLine struct
-		requestLineStruct, err := requestLineFromString(requestLineText)
-		if err != nil {
-			return 0, err
-		}
 		// store the requestLineStruct in r.RequestLine
-		r.RequestLine = *requestLineStruct
-		// update r.pState
-		r.pState = done
+		r.RequestLine = *requestLine
+		// update r.state
+		r.state = requestStateDone
 		// return num successfully consumed and parsed bytes
-		return consumededBytes, nil
-	} else if r.pState == done {
-		return -1, fmt.Errorf("error: trying to read data in a done state %v", r.pState)
-	} else {
-		return -1, fmt.Errorf("error: unknown state %v", r.pState)
+		return n, nil
+	case requestStateDone:
+		return 0, fmt.Errorf("error: trying to read data in a done state")
+	default:
+		return 0, fmt.Errorf("error: unknown state %v", r.state)
 	}
 }

@@ -26,17 +26,13 @@ func main() {
 		}
 		fmt.Println("Accepted connection from", conn.RemoteAddr())
 		//
-		linesChan, err := request.RequestFromReader(conn)
+		req, err := request.RequestFromReader(conn)
 		if err != nil {
-			fmt.Errorf("%v", err)
-			return
+			log.Fatalf("error parsing request: %s\n", err.Error())
 		}
-		printTemplate := fmt.Sprintf(`Request line:
-- Method: %s
-- Target: %s
-- Version: %s
-`, linesChan.RequestLine.Method, linesChan.RequestLine.RequestTarget, linesChan.RequestLine.HttpVersion)
-
-		fmt.Printf(printTemplate)
+		fmt.Println("Request line:")
+		fmt.Printf("- Method: %s\n", req.RequestLine.Method)
+		fmt.Printf("- Target: %s\n", req.RequestLine.RequestTarget)
+		fmt.Printf("- Version: %s\n", req.RequestLine.HttpVersion)
 	}
 }

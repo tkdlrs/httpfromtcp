@@ -57,7 +57,7 @@ func TestHeaderParser(t *testing.T) {
 	assert.Equal(t, 0, n)
 	assert.False(t, done)
 
-	// Test: Invalid charcter in header key
+	// Test: Invalid charcter header
 	headers = NewHeaders()
 	data = []byte("H©st: localhost:42069\r\n\r\n")
 	n, done, err = headers.Parse(data)

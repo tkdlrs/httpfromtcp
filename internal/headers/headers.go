@@ -3,6 +3,7 @@ package headers
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -37,6 +38,18 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	//
 	value := bytes.TrimSpace(parts[1])
 	key = strings.TrimSpace(key)
+	key = strings.ToLower(key)
+	//
+	pattern := "[^A-Za-z0-9!#$%&'*+\\-.^_`|~]+"
+	//
+	matched, err := regexp.MatchString(pattern, key)
+	if err != nil {
+		return 0, false, fmt.Errorf("error compiling regex: %v", err)
+
+	}
+	if matched {
+		return 0, false, fmt.Errorf("header key contains invalid characters")
+	}
 	//
 	h.Set(key, string(value))
 	//

@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/tkdlrs/httpfromtcp/internal/headers"
 )
 
 type Request struct {
 	RequestLine RequestLine
 	state       requestState
+	Headers     headers.Headers
 }
 
 type RequestLine struct {
@@ -23,6 +26,7 @@ type requestState int
 
 const (
 	requestStateInitialized requestState = iota
+	requestStateParsingHeaders
 	requestStateDone
 )
 
@@ -114,7 +118,7 @@ func requestLineFromString(str string) (*RequestLine, error) {
 	}, nil
 }
 
-func (r *Request) parse(data []byte) (int, error) {
+func (r *Request) parseSingle(data []byte) (int, error) {
 	switch r.state {
 	case requestStateInitialized:
 		requestLine, n, err := parseRequestLine(data)
@@ -127,11 +131,34 @@ func (r *Request) parse(data []byte) (int, error) {
 			return 0, nil
 		}
 		r.RequestLine = *requestLine
-		r.state = requestStateDone
+		r.state = requestStateParsingHeaders
+		return n, nil
+	case requestStateParsingHeaders:
+		heads := headers.NewHeaders()
+		n, done, err := heads.Parse(data)
+		if err != nil {
+			return 0, fmt.Errorf("error working thorugh headers")
+		}
+		if done {
+			r.Headers = heads
+			r.state = requestStateDone
+		}
 		return n, nil
 	case requestStateDone:
 		return 0, fmt.Errorf("error: trying to read data in a done state")
 	default:
 		return 0, fmt.Errorf("unknown state")
 	}
+}
+
+func (r *Request) parse(data []byte) (int, error) {
+	totalBytesParsed := 0
+	for r.state != requestStateDone {
+		n, err := r.parseSingle(data[totalBytesParsed:])
+		if err != nil {
+			return 0, fmt.Errorf("error when attempting to parse data")
+		}
+		totalBytesParsed += n
+	}
+	return totalBytesParsed, nil
 }

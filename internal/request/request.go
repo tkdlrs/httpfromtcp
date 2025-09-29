@@ -12,8 +12,8 @@ import (
 
 type Request struct {
 	RequestLine RequestLine
-	state       requestState
 	Headers     headers.Headers
+	state       requestState
 }
 
 type RequestLine struct {
@@ -37,7 +37,8 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	buf := make([]byte, bufferSize)
 	readToIndex := 0
 	req := &Request{
-		state: requestStateInitialized,
+		state:   requestStateInitialized,
+		Headers: headers.NewHeaders(),
 	}
 	for req.state != requestStateDone {
 		if readToIndex >= len(buf) {
@@ -50,7 +51,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				if req.state != requestStateDone {
-					return nil, fmt.Errorf("incomplete request")
+					return nil, fmt.Errorf("incomplete request, in state: %d, read n bytesx on EOF: %d", req.state, numBytesRead)
 				}
 				break
 			}
@@ -118,6 +119,21 @@ func requestLineFromString(str string) (*RequestLine, error) {
 	}, nil
 }
 
+func (r *Request) parse(data []byte) (int, error) {
+	totalBytesParsed := 0
+	for r.state != requestStateDone {
+		n, err := r.parseSingle(data[totalBytesParsed:])
+		if err != nil {
+			return 0, err
+		}
+		totalBytesParsed += n
+		if n == 0 {
+			break
+		}
+	}
+	return totalBytesParsed, nil
+}
+
 func (r *Request) parseSingle(data []byte) (int, error) {
 	switch r.state {
 	case requestStateInitialized:
@@ -134,13 +150,11 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 		r.state = requestStateParsingHeaders
 		return n, nil
 	case requestStateParsingHeaders:
-		heads := headers.NewHeaders()
-		n, done, err := heads.Parse(data)
+		n, done, err := r.Headers.Parse(data)
 		if err != nil {
-			return 0, fmt.Errorf("error working thorugh headers")
+			return 0, err
 		}
 		if done {
-			r.Headers = heads
 			r.state = requestStateDone
 		}
 		return n, nil
@@ -149,16 +163,4 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 	default:
 		return 0, fmt.Errorf("unknown state")
 	}
-}
-
-func (r *Request) parse(data []byte) (int, error) {
-	totalBytesParsed := 0
-	for r.state != requestStateDone {
-		n, err := r.parseSingle(data[totalBytesParsed:])
-		if err != nil {
-			return 0, fmt.Errorf("error when attempting to parse data")
-		}
-		totalBytesParsed += n
-	}
-	return totalBytesParsed, nil
 }

@@ -39,6 +39,6 @@ func main() {
 			fmt.Printf("- %s: %s\n", key, val)
 		}
 		fmt.Println("Body:")
-		fmt.Printf("%s\n", req.Body)
+		fmt.Println(string(req.Body))
 	}
 }

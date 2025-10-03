@@ -5,6 +5,8 @@ import (
 	"log"
 	"net"
 	"sync/atomic"
+
+	"github.com/tkdlrs/httpfromtcp/internal/response"
 )
 
 // Contains the state of the server. Server is an HTTP 1.1 server
@@ -53,11 +55,9 @@ func (s *Server) listen() {
 // Handles a single connection by writing the following response and then closing the connection.
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
-	response := "HTTP/1.1 200 OK\r\n" + // Status line
-		"Content-Type: text/plain\r\n" + // Example header
-		// "Content-Length: 13\r\n" + // Content length header
-		"\r\n" + // Blank line to separate headers from the body
-		"Hello World!\n" //Body
-	conn.Write([]byte(response))
-	return
+	response.WriteStatusLine(conn, response.StatusCodeSuccess)
+	headers := response.GetDefaultHeader(0)
+	if err := response.WriteHeaders(conn, headers); err != nil {
+		fmt.Printf("error: %v\n", err)
+	}
 }

@@ -1,9 +1,7 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"sync/atomic"
@@ -12,21 +10,7 @@ import (
 	"github.com/tkdlrs/httpfromtcp/internal/response"
 )
 
-type Handler func(w io.Writer, req *request.Request) *HandlerError
-
-type HandlerError struct {
-	StatusCode response.StatusCode
-	Message    string
-}
-
-// logic that writes a HandlerError to an io.Writer.
-func (he HandlerError) Write(w io.Writer) {
-	response.WriteStatusLine(w, he.StatusCode)
-	messageBytes := []byte(he.Message)
-	headers := response.GetDefaultHeaders(len(messageBytes))
-	response.WriteHeaders(w, headers)
-	w.Write(messageBytes)
-}
+type Handler func(w *response.Writer, req *request.Request)
 
 // Server is an HTTP 1.1 server
 type Server struct {
@@ -75,34 +59,15 @@ func (s *Server) listen() {
 // Handles a single connection by writing the following response and then closing the connection.
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
-	// parse the request from the connection
+	w := response.NewWriter(conn)
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		hErr := &HandlerError{
-			StatusCode: response.StatusCodeBadRequest,
-			Message:    err.Error(),
-		}
-		hErr.Write(conn)
+		w.WriteStatusLine(response.StatusCodeBadRequest)
+		body := []byte(fmt.Sprintf("Error parsing request: %v", err))
+		w.WriteHeaders(response.GetDefaultHeaders(len(body)))
+		w.WriteBody(body)
 		return
 	}
-	// New empty bytes.Buffer for handler to write to
-	buf := bytes.NewBuffer([]byte{})
-	// call the handler function
-	hErr := s.handler(buf, req)
-	// if handler errors, write the error to the connection
-	if hErr != nil {
-		hErr.Write(conn)
-		return
-	}
-	// if handler succeeds
-	b := buf.Bytes()
-	// Create a new default response header
-	// write the status line
-	response.WriteStatusLine(conn, response.StatusCodeSuccess)
-	// write headers
-	headers := response.GetDefaultHeaders(len(b))
-	// write response body from handler's buffer
-	response.WriteHeaders(conn, headers)
-	conn.Write(b)
+	s.handler(w, req)
 	return
 }

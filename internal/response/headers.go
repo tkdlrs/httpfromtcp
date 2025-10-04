@@ -7,7 +7,7 @@ import (
 	"github.com/tkdlrs/httpfromtcp/internal/headers"
 )
 
-func GetDefaultHeader(contenLen int) headers.Headers {
+func GetDefaultHeaders(contenLen int) headers.Headers {
 	h := headers.NewHeaders()
 	h.Set("Content-Length", fmt.Sprintf("%d", contenLen))
 	h.Set("Connection", "close")

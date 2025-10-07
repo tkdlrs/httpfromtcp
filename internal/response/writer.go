@@ -13,21 +13,18 @@ const (
 	writerStateStatusLine writerState = iota
 	writerStateHeaders
 	writerStateBody
+	writerStateTrailers
 )
 
 type Writer struct {
 	writerState writerState
 	writer      io.Writer
-	XSize       int
-	ShaSum      [32]byte
 }
 
 func NewWriter(w io.Writer) *Writer {
 	return &Writer{
 		writerState: writerStateStatusLine,
 		writer:      w,
-		XSize:       0,
-		ShaSum:      [32]byte{},
 	}
 }
 
@@ -93,16 +90,25 @@ func (w *Writer) WriteChunkedBodyDone() (int, error) {
 	if w.writerState != writerStateBody {
 		return 0, fmt.Errorf("cannot write body in state %d", w.writerState)
 	}
-	n, err := w.writer.Write([]byte("0\r\n\r\n"))
+	n, err := w.writer.Write([]byte("0\r\n"))
 	if err != nil {
 		return n, err
 	}
+	w.writerState = writerStateTrailers
 	return n, nil
 }
 
 func (w *Writer) WriteTrailers(h headers.Headers) error {
-	h.Set("X-Content-SHA256", fmt.Sprintf("%v", w.ShaSum))
-	h.Set("X-Content-Length", fmt.Sprintf("%d", w.XSize))
-
-	return nil
+	if w.writerState != writerStateTrailers {
+		return fmt.Errorf("cannot write trailers in state %d", w.writerState)
+	}
+	defer func() { w.writerState = writerStateBody }()
+	for k, v := range h {
+		_, err := w.writer.Write([]byte(fmt.Sprintf("%s: %s\r\n", k, v)))
+		if err != nil {
+			return err
+		}
+	}
+	_, err := w.writer.Write([]byte("\r\n"))
+	return err
 }

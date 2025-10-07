@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/tkdlrs/httpfromtcp/internal/headers"
 	"github.com/tkdlrs/httpfromtcp/internal/request"
 	"github.com/tkdlrs/httpfromtcp/internal/response"
 	"github.com/tkdlrs/httpfromtcp/internal/server"
@@ -117,23 +118,24 @@ func proxyHandler(w *response.Writer, req *request.Request) {
 	w.WriteStatusLine(response.StatusCodeSuccess)
 	h := response.GetDefaultHeaders(0)
 	h.Override("Transfer-Encoding", "chunked")
-	h.Remove("Content-Length")
 	h.Override("Trailer", "X-Content-SHA256, X-Content-Length")
+	h.Remove("Content-Length")
 	w.WriteHeaders(h)
+	//
+	fullBody := make([]byte, 0)
 	//
 	const maxChunkSize = 1024
 	buffer := make([]byte, maxChunkSize)
-	responseBodySize := 0
 	for {
 		n, err := resp.Body.Read(buffer)
 		fmt.Println("Read", n, "bytes")
 		if n > 0 {
-			rbs, err := w.WriteChunkedBody(buffer[:n])
+			_, err := w.WriteChunkedBody(buffer[:n])
 			if err != nil {
 				fmt.Println("Error writing chunked body:", err)
 				break
 			}
-			responseBodySize += rbs
+			fullBody = append(fullBody, buffer[:n]...)
 		}
 		if err == io.EOF {
 			break
@@ -143,13 +145,18 @@ func proxyHandler(w *response.Writer, req *request.Request) {
 			break
 		}
 	}
-	rbsd, err := w.WriteChunkedBodyDone()
+	_, err = w.WriteChunkedBodyDone()
 	if err != nil {
 		fmt.Println("Error writing chunked body done:", err)
 	}
-	responseBodySize += rbsd
-	w.XSize = responseBodySize
-	w.ShaSum = sha256.Sum256(buffer)
-	// dealing with trailers
-	w.WriteTrailers(h)
+	//
+	trailers := headers.NewHeaders()
+	sha256 := fmt.Sprintf("%x", sha256.Sum256(fullBody))
+	trailers.Override("X-Content-SHA256", sha256)
+	trailers.Override("X-Content-Length", fmt.Sprintf("%d", len(fullBody)))
+	err = w.WriteTrailers(trailers)
+	if err != nil {
+		fmt.Println("Error writing trailers:", err)
+	}
+	fmt.Println("Wrote trailers")
 }

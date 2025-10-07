@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"log"
@@ -117,19 +118,22 @@ func proxyHandler(w *response.Writer, req *request.Request) {
 	h := response.GetDefaultHeaders(0)
 	h.Override("Transfer-Encoding", "chunked")
 	h.Remove("Content-Length")
+	h.Override("Trailer", "X-Content-SHA256, X-Content-Length")
 	w.WriteHeaders(h)
 	//
 	const maxChunkSize = 1024
 	buffer := make([]byte, maxChunkSize)
+	responseBodySize := 0
 	for {
 		n, err := resp.Body.Read(buffer)
 		fmt.Println("Read", n, "bytes")
 		if n > 0 {
-			_, err = w.WriteChunkedBody(buffer[:n])
+			rbs, err := w.WriteChunkedBody(buffer[:n])
 			if err != nil {
 				fmt.Println("Error writing chunked body:", err)
 				break
 			}
+			responseBodySize += rbs
 		}
 		if err == io.EOF {
 			break
@@ -139,8 +143,13 @@ func proxyHandler(w *response.Writer, req *request.Request) {
 			break
 		}
 	}
-	_, err = w.WriteChunkedBodyDone()
+	rbsd, err := w.WriteChunkedBodyDone()
 	if err != nil {
 		fmt.Println("Error writing chunked body done:", err)
 	}
+	responseBodySize += rbsd
+	w.XSize = responseBodySize
+	w.ShaSum = sha256.Sum256(buffer)
+	// dealing with trailers
+	w.WriteTrailers(h)
 }

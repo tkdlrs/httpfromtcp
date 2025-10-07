@@ -18,12 +18,16 @@ const (
 type Writer struct {
 	writerState writerState
 	writer      io.Writer
+	XSize       int
+	ShaSum      [32]byte
 }
 
 func NewWriter(w io.Writer) *Writer {
 	return &Writer{
 		writerState: writerStateStatusLine,
 		writer:      w,
+		XSize:       0,
+		ShaSum:      [32]byte{},
 	}
 }
 
@@ -94,4 +98,11 @@ func (w *Writer) WriteChunkedBodyDone() (int, error) {
 		return n, err
 	}
 	return n, nil
+}
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	h.Set("X-Content-SHA256", fmt.Sprintf("%v", w.ShaSum))
+	h.Set("X-Content-Length", fmt.Sprintf("%d", w.XSize))
+
+	return nil
 }

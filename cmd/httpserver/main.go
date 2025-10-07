@@ -35,6 +35,10 @@ func main() {
 
 // create handler function
 func handler(w *response.Writer, req *request.Request) {
+	if strings.HasPrefix(req.RequestLine.RequestTarget, "/video") {
+		handlerVideo(w, req)
+		return
+	}
 	if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin") {
 		proxyHandler(w, req)
 		return
@@ -49,6 +53,21 @@ func handler(w *response.Writer, req *request.Request) {
 		return
 	}
 	handler200(w, req)
+	return
+}
+
+func handlerVideo(w *response.Writer, _ *request.Request) {
+	w.WriteStatusLine(response.StatusCodeSuccess)
+	video, err := os.ReadFile("assets/vim.mp4")
+	if err != nil {
+		fmt.Println("error with video")
+		return
+	}
+
+	h := response.GetDefaultHeaders(len(video))
+	h.Override("Content-Type", "video/mp4")
+	w.WriteHeaders(h)
+	w.WriteBody(video)
 	return
 }
 
@@ -85,7 +104,6 @@ func handler500(w *response.Writer, _ *request.Request) {
 	w.WriteHeaders(h)
 	w.WriteBody(body)
 }
-
 func handler200(w *response.Writer, _ *request.Request) {
 	w.WriteStatusLine(response.StatusCodeSuccess)
 	body := []byte(`<html>
